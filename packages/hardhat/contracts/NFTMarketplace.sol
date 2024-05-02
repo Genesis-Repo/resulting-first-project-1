@@ -24,6 +24,8 @@ contract NFTMarketplace is ERC721Enumerable, Ownable, ReentrancyGuard {
         uint256 endTime;
         bool isActive;
         mapping(address => uint256) bids;
+        bool automatedBiddingEnabled;
+        uint256 minBidIncrementPercentage;
     }
 
     mapping(uint256 => NFTListing) public nftListings;
@@ -70,7 +72,7 @@ contract NFTMarketplace is ERC721Enumerable, Ownable, ReentrancyGuard {
         emit NFTUnlisted(_tokenId, msg.sender);
     }
 
-    function startAuction(uint256 _tokenId, uint256 _startingPrice, uint256 _duration) external {
+    function startAuction(uint256 _tokenId, uint256 _startingPrice, uint256 _duration, bool _automatedBidding, uint256 _minBidIncrementPercentage) external {
         require(ownerOf(_tokenId) == msg.sender, "You do not own this NFT");
         require(_startingPrice > 0, "Starting price must be greater than zero");
         require(_duration > 0, "Auction duration must be greater than zero");
@@ -82,6 +84,8 @@ contract NFTMarketplace is ERC721Enumerable, Ownable, ReentrancyGuard {
         newAuction.highestBidder = address(0);
         newAuction.endTime = block.timestamp + _duration;
         newAuction.isActive = true;
+        newAuction.automatedBiddingEnabled = _automatedBidding;
+        newAuction.minBidIncrementPercentage = _minBidIncrementPercentage;
 
         emit AuctionStarted(_tokenId, msg.sender, _startingPrice, newAuction.endTime);
         nftAuctionCounter++;
@@ -102,6 +106,18 @@ contract NFTMarketplace is ERC721Enumerable, Ownable, ReentrancyGuard {
         auction.highestBid = msg.value;
 
         emit NewBid(_tokenId, msg.sender, msg.value);
+
+        if (auction.automatedBiddingEnabled) {
+            uint256 minIncrement = (auction.highestBid * auction.minBidIncrementPercentage) / 100;
+            uint256 autoBid = auction.highestBid + minIncrement;
+
+            if (msg.sender != auction.highestBidder && msg.value >= autoBid) {
+                auction.bids[msg.sender] = autoBid;
+                auction.highestBidder = msg.sender;
+                auction.highestBid = autoBid;
+                emit NewBid(_tokenId, msg.sender, autoBid);
+            }
+        }
     }
 
     function withdrawBid(uint256 _tokenId) external nonReentrant {
